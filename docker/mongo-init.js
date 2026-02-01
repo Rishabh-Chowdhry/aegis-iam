@@ -12,7 +12,7 @@ const appDb = db.getSiblingDB(db.currentDataInsert());
 // Create application user with appropriate roles
 db.createUser({
   user: "iam_app_user",
-  pwd: process.env.MONGO_APP_PASSWORD || "iam_app_password",
+  pwd: process.env.MONGO_APP_PASSWORD || "",
   roles: [
     { role: "readWrite", db: "iam" },
     { role: "dbAdmin", db: "iam" },
