@@ -1,0 +1,113 @@
+# ===============================================
+# Node.js / TypeScript
+# ===============================================
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+coverage/
+
+# ===============================================
+# Environment & Secrets
+# ===============================================
+.env
+.env.local
+.env.*.local
+.env.production
+.env.production.local
+*.secret
+*.pem
+*.key
+*.crt
+
+# ===============================================
+# Database & ORM (Prisma)
+# ===============================================
+prisma/*.db
+prisma/*.db-journal
+prisma/migrations/**/down.sql
+prisma/migrations/**/down_*.sql
+prisma/migrations/**/up.sql
+prisma/migrations/**/up_*.sql
+prisma/migrations/.migration_lock.toml
+prisma/generated/
+
+# ===============================================
+# Redis / Caching
+# ===============================================
+*.rdb
+*.aof
+dump.rdb
+redis.conf
+
+# ===============================================
+# Logs & Runtime Artifacts
+# ===============================================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+tmp/
+temp/
+*.pid
+*.seed
+
+# ===============================================
+# Docker
+# ===============================================
+docker/volumes/
+docker/override.yml
+docker-compose.override.yml
+
+# ===============================================
+# OS & IDE
+# ===============================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+*.lnk
+
+# Linux
+*~ 
+.directory
+.Trash-*
+.nfs*
+
+# VS Code
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.microsoft-authentication
+
+# JetBrains
+.idea/
+*.iml
+*.ipr
+*.iws
+.idea_modules/
+
+# ===============================================
+# Test & Coverage
+# ===============================================
+.nyc_output/
+htmlcov/
+.coverage
+*.lcov
+jest-results.xml
+test-results.xml
+
+# ===============================================
+# Misc
+# ===============================================
+*.tsbuildinfo
+.eslintcache
+.prettierignore
+

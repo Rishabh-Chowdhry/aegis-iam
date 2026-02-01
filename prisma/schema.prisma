@@ -1,0 +1,424 @@
+// Prisma schema for Enterprise-grade Multi-tenant SaaS IAM Platform
+// SOC2/ISO 27001 compliant with full audit trail support
+// Generated for MongoDB
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "mongodb"
+}
+
+// ==================== TENANT ====================
+
+// Multi-tenant organization with full configuration support
+model Tenant {
+  id              String        @id @default(auto()) @map("_id") @db.ObjectId
+  name            String        @unique // slug format
+  displayName     String
+  domain          String?       @unique
+  
+  // Status and lifecycle
+  status          String        @default("PENDING") // TenantStatus: PENDING, ACTIVE, SUSPENDED, OFFBOARDING, DELETED
+  
+  // Configuration
+  settings        Json?         // Tenant-specific settings
+  limits          Json?         // Usage limits (users, api keys, etc.)
+  ssoConfig       Json?         // SSO configuration (SAML/OIDC)
+  
+  // Timestamps
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  activatedAt     DateTime?
+  suspendedAt     DateTime?
+  offboardedAt    DateTime?
+  lastActivityAt  DateTime?
+  
+  // Relations (MongoDB uses String references)
+  users           String[]      // Array of User ObjectIds
+  roles           String[]      // Array of Role ObjectIds
+  policies        String[]      // Array of Policy ObjectIds
+  permissions     String[]      // Array of Permission ObjectIds
+  auditLogs       String[]      // Array of AuditLog ObjectIds
+  sessions        String[]      // Array of Session ObjectIds
+  apiKeys         String[]      // Array of ApiKey ObjectIds
+  
+  // Self-reference for hierarchical tenants (if needed)
+  parentId        String?       @db.ObjectId
+  parent          Tenant?       @relation("TenantHierarchy", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  children        Tenant[]      @relation("TenantHierarchy")
+  
+  @@map("tenants")
+  @@index([status])
+}
+
+// ==================== USER ====================
+
+// User entity with MFA and comprehensive profile support
+model User {
+  id              String        @id @default(auto()) @map("_id") @db.ObjectId
+  email           String
+  passwordHash    String
+  
+  // Tenant relationship (MongoDB uses String reference)
+  tenantId        String        @db.ObjectId
+  
+  // Status and roles
+  status          String        @default("PENDING") // UserStatus: PENDING, ACTIVE, SUSPENDED, DELETED
+  roles           String[]      // Role names assigned to user
+  
+  // Profile attributes (JSON for extensibility)
+  attributes      Json?
+  
+  // MFA configuration
+  mfaEnabled      Boolean       @default(false)
+  mfaSecret       String?       // Encrypted TOTP secret
+  mfaBackupCodes  String[]      // Backup codes for account recovery
+  
+  // Security tracking
+  failedLogins    Int           @default(0)
+  lockedUntil     DateTime?
+  
+  // Timestamps
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  lastLoginAt     DateTime?
+  lastActivityAt  DateTime?
+  emailVerifiedAt DateTime?
+  
+  // Relations (MongoDB uses String references)
+  sessions              String[]      // Array of Session ObjectIds
+  policyAttachmentIds   String[]      // Array of PolicyAttachment ObjectIds
+  
+  // Indexes for efficient querying
+  @@index([tenantId])
+  @@index([status])
+  @@map("users")
+}
+
+// ==================== ROLE ====================
+
+// Role with hierarchical support and permission inheritance
+model Role {
+  id              String        @id @default(auto()) @map("_id") @db.ObjectId
+  name            String
+  description     String?
+  
+  // Tenant relationship (MongoDB uses String reference)
+  tenantId        String        @db.ObjectId
+  
+  // Hierarchy support
+  hierarchyLevel  Int           @default(0)
+  parentRoleId    String?       @db.ObjectId
+  parentRole      Role?         @relation("RoleHierarchy", fields: [parentRoleId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  childRoles      Role[]        @relation("RoleHierarchy")
+  
+  // Permissions
+  permissions     String[]      // Permission names
+  
+  // Timestamps
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  
+  // Relations (MongoDB uses String references)
+  policyIds               String[]      // Array of Policy ObjectIds
+  policyAttachmentIds     String[]      // Array of PolicyAttachment ObjectIds
+  
+  // Indexes for efficient querying
+  @@index([tenantId])
+  @@index([parentRoleId])
+  @@map("roles")
+}
+
+// ==================== POLICY ====================
+
+// Policy with versioning and soft-delete support for ABAC policies
+model Policy {
+  id                    String        @id @default(auto()) @map("_id") @db.ObjectId
+  version               String        @default("2026-01-01") // Policy schema version
+  name                  String
+  description           String?
+  
+  // Tenant relationship (MongoDB uses String reference)
+  tenantId              String        @db.ObjectId
+  
+  // Policy document (ABAC policy JSON)
+  document              Json
+  
+  // Versioning support (MongoDB stores versions as array)
+  versionHistory        Json?         // Array of previous versions
+  
+  // Status and metadata
+  status                String        @default("DRAFT") // PolicyStatus: DRAFT, ACTIVE, INACTIVE
+  tags                  Json?         // Policy tags for categorization
+  
+  // Soft delete fields
+  deletedAt             DateTime?
+  deletedBy             String?
+  
+  // Timestamps
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+  createdBy             String
+  
+  // Relations (MongoDB uses String references)
+  roleIds               String[]      // Array of Role ObjectIds
+  policyAttachmentIds   String[]      // Array of PolicyAttachment ObjectIds
+  
+  // Indexes for efficient querying
+  @@index([tenantId, status])
+  @@index([tenantId, name])
+  @@index([deletedAt])
+  @@map("policies")
+}
+
+// ==================== POLICY ATTACHMENT ====================
+
+// Links policies to users, roles, or services with optional expiration
+model PolicyAttachment {
+  id              String          @id @default(auto()) @map("_id") @db.ObjectId
+  
+  // Policy relationship (MongoDB uses String reference)
+  policyId        String          @db.ObjectId
+  
+  // Attachment target
+  attachedToType  String          // AttachmentType: USER, ROLE, SERVICE
+  attachedToId    String          // userId, roleId, or serviceId (MongoDB ObjectId)
+  
+  // Expiration (optional)
+  expiresAt       DateTime?
+  
+  // Timestamps
+  createdAt       DateTime        @default(now())
+  createdBy       String
+  
+  // Indexes for efficient querying
+  @@index([attachedToType, attachedToId])
+  @@index([policyId])
+  @@index([expiresAt])
+  @@map("policy_attachments")
+}
+
+// ==================== PERMISSION ====================
+
+// Permission catalog for RBAC with extensible attributes
+model Permission {
+  id              String        @id @default(auto()) @map("_id") @db.ObjectId
+  action          String        // e.g., "INVOICE_READ", "USER_CREATE"
+  resourceType    String        // e.g., "invoice", "user"
+  description     String?
+  
+  // Tenant relationship (MongoDB uses String reference)
+  tenantId        String        @db.ObjectId
+  
+  // Extensible attributes
+  attributes      Json?
+  
+  // Timestamps
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  
+  // Indexes for efficient querying
+  @@index([tenantId])
+  @@index([resourceType])
+  @@map("permissions")
+}
+
+// ==================== AUDIT LOG (APPEND-ONLY) ====================
+
+// Comprehensive audit log for SOC2/ISO 27001 compliance
+// IMPORTANT: This table is APPEND-ONLY - no updates or deletes allowed
+model AuditLog {
+  id              String        @id @default(auto()) @map("_id") @db.ObjectId
+  eventId         String        @default(uuid()) // Unique event ID (UUID for MongoDB)
+  eventType       String        // AuditEventType: AUTHORIZATION_DECISION, POLICY_CHANGE, TENANT_LIFECYCLE, USER_LIFECYCLE, SESSION_EVENT, CONFIGURATION_CHANGE, SECURITY_EVENT, BOUNDARY_VIOLATION
+  
+  // Tenant context (MongoDB uses String reference)
+  tenantId        String        @db.ObjectId
+  
+  // Subject (who performed the action)
+  subjectId       String
+  subjectType     String        // "user", "service", "system"
+  subjectTenantId String
+  
+  // Action details
+  actionName      String
+  actionType      String?
+  
+  // Resource details
+  resourceType    String
+  resourceId      String?
+  resourceTenantId String
+  
+  // Request context
+  ipAddress       String
+  userAgent       String?
+  requestId       String
+  mfaVerified     Boolean       @default(false)
+  riskScore       Int           @default(0)
+  environment     String        // "production", "staging", "development"
+  context         Json          // Additional context data
+  
+  // Authorization decision
+  decision        String        // "ALLOW" or "DENY"
+  reason          String
+  reasonCode      String
+  matchedPolicies String[]      // Policy IDs that contributed to decision
+  evaluationId    String        // Unique evaluation ID for correlation
+  
+  // Performance tracking
+  duration        Int?          // Response time in milliseconds
+  traceId         String?       // Distributed tracing ID
+  
+  // Tamper evidence (HMAC signature)
+  signature       String?
+  
+  // Timestamps (immutable)
+  createdAt       DateTime      @default(now())
+  
+  // Indexes for efficient querying
+  @@index([tenantId, createdAt])
+  @@index([tenantId, eventType, createdAt])
+  @@index([subjectId, createdAt])
+  @@index([resourceType, resourceId])
+  @@index([decision, createdAt])
+  @@index([evaluationId])
+  @@index([requestId])
+  @@map("audit_logs")
+}
+
+// ==================== API KEY ====================
+
+// API key for service-to-service authentication
+model ApiKey {
+  id              String        @id @default(auto()) @map("_id") @db.ObjectId
+  keyPrefix       String        // First 8 chars for identification
+  keyHash         String        // bcrypt hash of full key
+  
+  // Tenant relationship (MongoDB uses String reference)
+  tenantId        String        @db.ObjectId
+  
+  // Scopes and permissions
+  scopes          String[]      // OAuth-style scopes
+  permissions     String[]      // Granted permissions
+  
+  // Status
+  status          String        @default("ACTIVE") // ApiKeyStatus: ACTIVE, REVOKED, EXPIRED
+  
+  // Usage tracking
+  lastUsedAt      DateTime?
+  lastUsedIp      String?
+  usageCount      Int           @default(0)
+  
+  // Expiration
+  expiresAt       DateTime?
+  
+  // Metadata
+  name            String?
+  description     String?
+  createdBy       String
+  
+  // Timestamps
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  
+  // Indexes for efficient querying
+  @@index([tenantId, status])
+  @@index([expiresAt])
+  @@map("api_keys")
+}
+
+// ==================== SESSION ====================
+
+// User session for authenticated state management
+model Session {
+  id              String        @id @default(auto()) @map("_id") @db.ObjectId
+  tokenHash       String        // Hash of session token
+  
+  // Tenant relationship (MongoDB uses String reference)
+  tenantId        String        @db.ObjectId
+  
+  // User relationship (MongoDB uses String reference)
+  userId          String        @db.ObjectId
+  
+  // Context
+  ipAddress       String
+  userAgent       String?
+  
+  // Status and tracking
+  status          String        @default("ACTIVE") // SessionStatus: ACTIVE, EXPIRED, REVOKED
+  lastActivityAt  DateTime      @default(now())
+  expiresAt       DateTime
+  
+  // Timestamps
+  createdAt       DateTime      @default(now())
+  
+  // Indexes for efficient querying
+  @@index([tenantId, userId])
+  @@index([tokenHash])
+  @@index([expiresAt])
+  @@index([status])
+  @@map("sessions")
+}
+
+// ==================== SSO CONFIGURATION ====================
+
+// SSO configuration for SAML/OIDC providers
+model SSOConfig {
+  id              String        @id @default(auto()) @map("_id") @db.ObjectId
+  tenantId        String        @db.ObjectId
+  provider        String        // "saml", "oidc"
+  config          Json          // Provider-specific configuration
+  enabled         Boolean       @default(true)
+  autoProvision   Boolean       @default(false)
+  defaultRole     String        @default("user")
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  
+  // Indexes for efficient querying
+  @@index([tenantId, provider])
+  @@index([tenantId])
+  @@map("sso_configs")
+}
+
+// ==================== TENANT SECRET ====================
+
+// Tenant secrets for JWT secrets and encryption keys
+model TenantSecret {
+  id              String        @id @default(auto()) @map("_id") @db.ObjectId
+  tenantId        String        @db.ObjectId
+  keyType         String        // "jwt-secret", "encryption-key"
+  keyValue        String        // Encrypted key value
+  version         Int           @default(1)
+  status          String        @default("active") // "active", "rotating", "deprecated", "revoked"
+  expiresAt       DateTime?
+  createdAt       DateTime      @default(now())
+  lastRotatedAt   DateTime?
+  
+  // Indexes for efficient querying
+  @@index([tenantId, keyType])
+  @@index([tenantId])
+  @@index([status])
+  @@map("tenant_secrets")
+}
+
+// ==================== CREDENTIAL DELIVERY TOKEN ====================
+
+// Secure credential delivery tokens for admin operations
+model CredentialDeliveryToken {
+  id              String        @id @default(auto()) @map("_id") @db.ObjectId
+  tenantId        String        @db.ObjectId
+  userId          String        @db.ObjectId
+  encryptedData   String        // AES-256 encrypted credentials
+  expiresAt       DateTime
+  consumed        Boolean       @default(false)
+  createdAt       DateTime      @default(now())
+  
+  // Indexes for efficient querying
+  @@index([tenantId])
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("credential_delivery_tokens")
+}
